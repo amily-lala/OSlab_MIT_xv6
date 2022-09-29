@@ -26,6 +26,7 @@ int main (int argc, char *argv[]) {
         write(p2[1],"m",1); //打开子进程的写端
         close(p2[1]);  //关闭子进程的写端
     } else {
+        /* parent */
         close(p1[0]);//关闭父进程读端
         close(p2[1]);//关闭子进程写端
         write(p1[1],"m",1);
