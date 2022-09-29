@@ -17,16 +17,17 @@ int main(int argc, char *argv[]) {
         int p2[2];
         pipe(p2);
         int num1, prime;
-        read(p1[0], &prime, sizeof(prime)); //"父"进程从管道中读取到的第一个数是质数
+
+        read(p1[0], &prime, sizeof(prime)); //每轮管道第一个读出的数是质数
         printf("prime %d\n", prime);
-        if (read(p1[0], &num1, sizeof(num1)) && num1) {
+        if (read(p1[0], &num1, sizeof(num1)) && num1) { //质数筛  // && 判断是否已读完
             int ret = fork();
             if (ret < 0) {
-                /* fork failed*/
+                /* fork failed */
                 printf("fork failed!");
                 exit(-1);
-            } else if (fork() == 0) {
-                /* child*/
+            } else if (ret == 0) {
+                /* child */
                 close(p1[0]);
                 close(p1[1]);
                 p1[0] = p2[0];
