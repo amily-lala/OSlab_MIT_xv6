@@ -37,7 +37,7 @@ find(char *path, char *target)
 
     switch(st.type){
     case T_FILE:
-        if ( strcmp(fmtname(path),target) == 0 ) {
+        if ( strcmp(fmtname(path),target) == 0 ) { // target目标文件匹
             printf("%s\n",path);
         }
         break;
