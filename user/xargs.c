@@ -36,6 +36,7 @@ main(int argc, char *argv[])
     int sum = 0; // 记录缓冲区字符串长度
     int len;
     while((len = read(0, all_buf, MAXN)) > 0 ) {
+        // 放在while循环内部，这样所有信息才会每次更新，之前放在外面发生了好多奇奇怪怪的错误，害
         char *buf = all_buf;
         char *pi; // 单个参数
         pi = buf;
