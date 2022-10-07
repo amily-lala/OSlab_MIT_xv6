@@ -57,7 +57,7 @@ kfree(void *pa)
   r = (struct run*)pa;
 
   acquire(&kmem.lock);
-  r->next = kmem.freelist;
+  r->next = kmem.freelist; //
   kmem.freelist = r;
   release(&kmem.lock);
 }
@@ -79,4 +79,25 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+// calculate free_mem
+// 
+uint64
+cal_freeMem(void)
+{
+  // attention free_mem -> page of physical memory ; so the real free_mem free_mem*4096 bytes
+  uint64 free_mem = 0; // count until pointer points to null 
+  struct run *r; // pointer point to freelist
+
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  // count until pointer point to null
+  while (r) {
+    free_mem++;
+    r = r->next;
+  }
+  release(&kmem.lock);
+
+  return free_mem*PGSIZE;
 }

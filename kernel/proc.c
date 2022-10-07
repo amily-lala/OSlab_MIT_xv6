@@ -152,6 +152,46 @@ freeproc(struct proc *p)
   p->state = UNUSED;
 }
 
+
+// calculate the number of nproc 
+uint64 
+cal_nproc(void)
+{
+  int nproc=0; // num of nproc
+  struct proc *p;
+
+  // count when proc's state is not UNUSED (process)
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == UNUSED) { // the state of proc is USED <-> number of process
+      nproc++;
+    } 
+    release(&p->lock);
+  }
+  return nproc;
+}
+
+//
+uint64
+cal_freefd(void)
+{
+  int freefd=0;
+  struct proc *p = myproc();
+
+  if(p == initproc)
+    panic("init exiting");
+
+  // count freefd
+  for(int fd = 0; fd < NOFILE; fd++){
+    if(!p->ofile[fd]){
+      freefd++;
+    }
+  }
+  return freefd;
+  
+
+}
+
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
 pagetable_t
