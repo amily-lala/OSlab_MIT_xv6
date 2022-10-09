@@ -157,7 +157,7 @@ freeproc(struct proc *p)
 uint64 
 cal_nproc(void)
 {
-  int nproc=0; // num of nproc
+  uint64 nproc=0; // num of nproc
   struct proc *p;
 
   // count when proc's state is not UNUSED (process)
@@ -171,11 +171,11 @@ cal_nproc(void)
   return nproc;
 }
 
-//
+// call freefd
 uint64
 cal_freefd(void)
 {
-  int freefd=0;
+  uint64 freefd=0;
   struct proc *p = myproc();
 
   if(p == initproc)
@@ -188,8 +188,6 @@ cal_freefd(void)
     }
   }
   return freefd;
-  
-
 }
 
 // Create a user page table for a given process,

@@ -485,10 +485,4 @@ sys_pipe(void)
   return 0;
 }
 
-// sys_trace
-uint64 
-sys_trace(void)
-{
-  argint(0,&myproc()->mask);
-  return 0;
-}
+

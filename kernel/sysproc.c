@@ -97,8 +97,21 @@ sys_uptime(void)
   return xticks;
 }
 
+
+// sys_trace 
+// print info of traced syscall
+// info form should be like    PID：sys_$name(arg0) -> return_value
+uint64 
+sys_trace(void)
+{
+  // 将a0寄存器中的返回值传递给现在进程的mask
+  argint(0,&myproc()->mask);
+  return 0;
+}
+
+
 // copy from kernel to user
-// return process/freemem/
+// return process/freemem/freefd
 uint64
 sys_sysinfo(void) 
 {
@@ -119,6 +132,5 @@ sys_sysinfo(void)
   if (copyout(p->pagetable,addr,(char *)&sinfo,sizeof(sinfo)) < 0) {
     return -1;
   }
-   
   return 0;
 }
