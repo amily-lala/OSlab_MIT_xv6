@@ -93,11 +93,16 @@ cal_freeMem(void)
   acquire(&kmem.lock);
   r = kmem.freelist;
   // count until pointer point to null
-  while (r) {
-    free_mem++;
-    r = r->next;
-  }
+  // while (r) {
+  //   free_mem++;
+  //   r = r->next;
+  // }
+  if ((char *)r < end || (uint64)r > PHYSTOP )
+    free_mem=0;
+  else 
+    // free_mem = (uint64)r - PGROUNDUP((uint64)end);
+    free_mem = (uint64) PHYSTOP - PGROUNDUP((uint64)end);
   release(&kmem.lock);
 
-  return free_mem*PGSIZE;
+  return free_mem;
 }
