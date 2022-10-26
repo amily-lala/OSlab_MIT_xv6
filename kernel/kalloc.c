@@ -18,7 +18,7 @@ struct run {
   struct run *next;
 };
 
-struct kmem{
+struct kmem {
   struct spinlock lock; // multi process compete for this lock
   struct run *freelist; // free physical page : 1.0 4kB/page ; 2.0 spinlock
 };
@@ -35,8 +35,10 @@ void
 kinit()
 {
   // TODO:STEP1 initlock
+  char buf[6]; 
   for (int i = 0; i < NCPU; i++) {
-    initlock(&kmems[i].lock, "kmem"+i);
+    snprintf(buf,8,"kmem%d",i);
+    initlock(&kmems[i].lock, buf);
   }
   freerange(end, (void*)PHYSTOP);
 }
@@ -67,15 +69,14 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  // TODO :STEP3 优先将内存放入当前CPU的freelist中
+  // TODO :STEP3 
   push_off(); // 关中断
   int cpuID = cpuid(); // 获取当前CPU的id
+  pop_off(); // 开中断
   acquire(&kmems[cpuID].lock);
   r->next = kmems[cpuID].freelist;
   kmems[cpuID].freelist = r;
   release(&kmems[cpuID].lock);
-  pop_off(); // 开中断
-
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -86,41 +87,65 @@ kalloc(void)
 {
   struct run *r;
 
-  // TODO:STEP2 优先为当前CPU分配内存
+  // TODO:STEP2
+  push_off();
+  int cpuID = cpuid();
+  pop_off();
 
-  push_off(); // 关中断
-
-  int cpuID = cpuid(); // 获取当前CPU的id
   acquire(&kmems[cpuID].lock);
   r = kmems[cpuID].freelist;
-  if(r) {
-    kmems[cpuID].freelist = r->next;
-  }
   if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
+    kmems[cpuID].freelist = r->next;
+  else {
+    // 从其他CPU窃取页，窃取完后，其他CPU也要更新内存链表；
+    struct run* tmp;
+    for (int i = 0; i < NCPU; ++i)
+    {
+      if (i == cpuID) 
+        continue;
+      acquire(&kmems[i].lock);
+      tmp = kmems[i].freelist;
+      if (tmp) {
+        for (int j = 0; j < 1024; j++) {
+          // 尽可能地多窃取页
+          if (tmp->next)
+            tmp = tmp->next;
+          else 
+            break;
+        }
+        kmems[cpuID].freelist = kmems[i].freelist; // 窃取编号kmemiCPU的全部内存
+        kmems[i].freelist = tmp->next;             // CPUi更新内存链表（NULL）
+        tmp->next = 0;
+        release(&kmems[i].lock);
+        break;
+      }
+      release(&kmems[i].lock);
+      // if (tmp == 0) {
+      //   release(&kmems[i].lock);
+      //   continue;
+      // } else {
+      //   for (int j = 0; j < 1024; j++) {
+      //     // steal 1024 pages
+      //     if (tmp->next)
+      //       tmp = tmp->next;
+      //     else 
+      //       break;
+      //   }
+      //   kmems[cpuID].freelist = kmems[i].freelist;
+      //   kmems[i].freelist = tmp->next;
+      //   tmp->next = 0;
+      //   release(&kmems[i].lock);
+      //   break;
+      // }
+    }
+    r = kmems[cpuID].freelist;
+    if (r) 
+      kmems[cpuID].freelist = r->next;
+  }
   release(&kmems[cpuID].lock);
 
-  pop_off(); // 开中断  // 位置？？？？
+  if(r)
+    memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
-
-  // TODO:若当前CPU没有空闲内存块，则从其他CPU的freelist窃取
-  // Q:按照for循环的顺序，还是随机一点好呢？
-  if(!r) {
-    for (int i = 0; i < NCPU; i++) {
-      if (i != cpuID) {
-        acquire(&kmems[i].lock);
-        r = kmems[i].freelist;
-        if(r) {
-          kmems[cpuID].freelist = r->next;
-        }
-        if(r)
-          memset((char*)r, 5, PGSIZE); // fill with junk
-        release(&kmems[i].lock);
-        return (void*)r;
-      }
-    }
-  }
-
-  return 0; //没有空闲内存，返回0（null）
 }
- 
+
