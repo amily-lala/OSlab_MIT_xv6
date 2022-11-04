@@ -37,8 +37,8 @@ kinit()
   // TODO:STEP1 initlock
   char buf[6]; 
   for (int i = 0; i < NCPU; i++) {
-    snprintf(buf,8,"kmem%d",i);
-    initlock(&kmems[i].lock, buf);
+    snprintf(buf,8,"kmem_%d",i); // 为啥不能显示呢？？？
+    initlock(&kmems[i].lock, "kmem");
   }
   freerange(end, (void*)PHYSTOP);
 }
@@ -98,7 +98,7 @@ kalloc(void)
     kmems[cpuID].freelist = r->next;
   else {
     // 从其他CPU窃取页，窃取完后，其他CPU也要更新内存链表；
-    struct run* tmp;
+    struct run *tmp;
     for (int i = 0; i < NCPU; ++i)
     {
       if (i == cpuID) 
@@ -120,30 +120,14 @@ kalloc(void)
         break;
       }
       release(&kmems[i].lock);
-      // if (tmp == 0) {
-      //   release(&kmems[i].lock);
-      //   continue;
-      // } else {
-      //   for (int j = 0; j < 1024; j++) {
-      //     // steal 1024 pages
-      //     if (tmp->next)
-      //       tmp = tmp->next;
-      //     else 
-      //       break;
-      //   }
-      //   kmems[cpuID].freelist = kmems[i].freelist;
-      //   kmems[i].freelist = tmp->next;
-      //   tmp->next = 0;
-      //   release(&kmems[i].lock);
-      //   break;
-      // }
+      // continue;
     }
     r = kmems[cpuID].freelist;
     if (r) 
       kmems[cpuID].freelist = r->next;
   }
-  release(&kmems[cpuID].lock);
 
+  release(&kmems[cpuID].lock);
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;

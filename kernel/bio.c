@@ -80,8 +80,8 @@ binit(void)
 
   char buf[9];
   for (int i = 0; i < NBUCKETS; i++) {
-    snprintf(buf,9,"bcache%d",i);
-    initlock(&bcache.hashLock[i],buf);
+    snprintf(buf,9,"bcache%d",i); // ???
+    initlock(&bcache.hashLock[i],"bcache");
     // Create linked list of buffers
     bcache.head[i].prev = &bcache.head[i];
     bcache.head[i].next = &bcache.head[i];
@@ -118,16 +118,17 @@ bget(uint dev, uint blockno)
   release(&bcache.hashLock[hashBucketNum]);
 
   // Not cached.
-  // 此时可能出现 bucket[i]->bucket[j] bucket[]->bucket[j]的情况
-  // acquire(&bcache.lock);
+  // 此时可能出现 bucket[i]->bucket[j] bucket[j]->bucket[i]死锁情况
+  // 可能出现一个磁盘块被多次缓存
+  acquire(&bcache.lock); // 一个block只能有一个缓存
   acquire(&bcache.hashLock[hashBucketNum]);
   
-  // 一个block只能有一个缓存
+  // 防止在释放hashBucketNum锁的间隙被其他进程写入磁盘内容，故再次检验
   for(b = bcache.head[hashBucketNum].next; b != &bcache.head[hashBucketNum]; b = b->next){
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
       release(&bcache.hashLock[hashBucketNum]);
-      // release(&bcache.lock);
+      release(&bcache.lock);
       acquiresleep(&b->lock);
       return b;
     }
@@ -135,12 +136,10 @@ bget(uint dev, uint blockno)
   
   while (1) {
     // 找到一个least_recent_used_buffer
-    // buffer ：own / never used / from other bucket / can't find
-    b = find_least_recent_used_buffer();
-    
+    // buffer来源可能有：own / never used / from other bucket / can't find
+    b = find_least_recent_used_buffer();  
     if (b==0) continue;
     int old_idx = b->bucketNum;
-
     // 如果b不属于任何桶或者属于当前桶
     if (old_idx == -1 || old_idx == hashBucketNum) {
       b->dev = dev;
@@ -155,7 +154,7 @@ bget(uint dev, uint blockno)
       }
 
       release(&bcache.hashLock[hashBucketNum]);
-      // release(&bcache.lock);
+      release(&bcache.lock);
       acquiresleep(&b->lock);
       return b;
     } else {
@@ -178,7 +177,7 @@ bget(uint dev, uint blockno)
 
       release(&bcache.hashLock[old_idx]);
       release(&bcache.hashLock[hashBucketNum]);
-      // release(&bcache.lock);
+      release(&bcache.lock);
       acquiresleep(&b->lock);
       return b;
     }
