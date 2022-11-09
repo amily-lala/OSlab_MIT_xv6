@@ -47,13 +47,55 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+// TODO:STEP2
+// 创建独立内核页表：同时映射 内核页表和用户页表，使得不经过页表切换直接交换数据，考虑可能重合的地址
+pagetable_t
+kvminit_new()
+{
+  pagetable_t k_pagetable = (pagetable_t) kalloc();
+  memset(k_pagetable, 0, PGSIZE);
+
+  // uart registers
+  if (mappages(k_pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) != 0) {
+    return 0;
+  }
+
+  // virtio mmio disk interface
+  if (mappages(k_pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0) {
+    return 0;
+  }
+
+  // PLIC
+  if (mappages(k_pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != 0) {
+    return 0;
+  }
+
+  // map kernel text executable and read-only.
+  if (mappages(k_pagetable, KERNBASE, (uint64)etext-KERNBASE, KERNBASE, PTE_R | PTE_X) != 0) {
+    return 0;
+  }
+
+  // map kernel data and the physical RAM we'll make use of.
+  if (mappages(k_pagetable, (uint64)etext, PHYSTOP-(uint64)etext, (uint64)etext, PTE_R | PTE_W) != 0) {
+    return 0;
+  }
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  if (mappages(k_pagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X) != 0) {
+    return 0;
+  }
+
+  return k_pagetable;
+}
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
 kvminithart()
 {
   w_satp(MAKE_SATP(kernel_pagetable));
-  sfence_vma();
+  sfence_vma();                       
 }
 
 // Return the address of the PTE in page table pagetable
@@ -120,6 +162,7 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
 }
+
 
 // translate a kernel virtual address to
 // a physical address. only needed for
@@ -280,9 +323,9 @@ freewalk(pagetable_t pagetable)
     pte_t pte = pagetable[i];
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
-      uint64 child = PTE2PA(pte);
+      uint64 child = PTE2PA(pte); // 转化成物理地址
       freewalk((pagetable_t)child);
-      pagetable[i] = 0;  
+      pagetable[i] = 0;  // 清零
     } else if(pte & PTE_V){
       panic("freewalk: leaf");
     }
@@ -450,3 +493,52 @@ test_pagetable()
   uint64 gsatp = MAKE_SATP(kernel_pagetable);
   return satp != gsatp;
 }
+
+// 页表打印功能
+void 
+walkprint(pagetable_t pgtbl,int dep) 
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+   
+    pte_t pte = pgtbl[i];
+
+    if ((pte & PTE_V)==1) {
+      for (int i = 0; i < dep; i++) {
+        printf("|| "); // 根 次 叶子 ： 0,1,2
+      }
+      uint64 child = PTE2PA(pte); // 转化成物理地址
+      printf("||%d: pte %p pa %p\n", i, pte, child);
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        // this PTE points to a lower-level page table.
+        walkprint((pagetable_t)child,dep+1); // 递归调用
+      }
+    } 
+  }
+}
+
+void
+vmprint (pagetable_t pgtbl) {
+  // 根页表物理地址
+  printf("page table %p\n",pgtbl);
+  walkprint(pgtbl,0);
+}
+
+
+// // TODO:STEP6
+// // 释放页表但不释放叶子页表指向的物理页帧 的方法
+// void 
+// proc_freekpagetable(pagetable_t kpagetable)
+// {
+//   for(int i = 0; i < 512; i++){
+//     pte_t pte = kpagetable[i];
+//     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+//       // this PTE points to a lower-level page table.
+//       uint64 child = PTE2PA(pte); // 转化成物理地址
+//       freewalk((pagetable_t)child);
+//       kpagetable[i] = 0;  // 清零
+//     } 
+//     // 叶子指向的共享的物理页，共享物理页帧不能被释放
+//   }
+//   kfree((void*)kpagetable);
+// }

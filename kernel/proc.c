@@ -40,6 +40,9 @@ procinit(void)
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
+
+      // 独立内核
+      p->kstack_pa = pa;
   }
   kvminithart();
 }
@@ -113,13 +116,28 @@ found:
     return 0;
   }
 
-  // An empty user page table.
+  // An empty user page table.(全局)
   p->pagetable = proc_pagetable(p);
+  
+  // 为进程分配独立内核页表 An empty kernal page table.
+  p->k_pagetable = kvminit_new();
+
   if(p->pagetable == 0){
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+
+  // TODO:STEP4
+  // 将内核栈映射到独立内核页表
+  if(p->k_pagetable != 0){
+    if(mappages(p->k_pagetable, p->kstack, PGSIZE, (uint64)p->kstack_pa, PTE_R|PTE_W) != 0) {
+      freeproc(p);
+      release(&p->lock);
+      return 0;
+    }
+  }
+
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -139,9 +157,12 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable){
     proc_freepagetable(p->pagetable, p->sz);
+    proc_freekpagetable(p->k_pagetable);
+  }
   p->pagetable = 0;
+  p->k_pagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -193,6 +214,29 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+// TODO:STEP6
+// 释放页表但不释放叶子页表指向的物理页帧 的方法 
+void 
+proc_freekpagetable(pagetable_t kpagetable)
+{
+    for(int i = 0; i < 512; i++){
+      pte_t pte = kpagetable[i];
+      if(pte & PTE_V) {
+        kpagetable[i]=0; 
+        // 防止叶子表项的PPN -> 物理地址 共享物理页被释放。 
+        if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+          // this PTE points to a lower-level page table.
+          uint64 child = PTE2PA(pte); // 转化成物理地址
+          proc_freekpagetable((pagetable_t)child); // 递归调用
+        }
+      } else if (pte & PTE_V) {
+        panic("proc_freekpagetable: leaf");
+      }
+    } 
+    // 叶子指向的共享的物理页，共享物理页帧不能被释放
+  kfree((void*)kpagetable);
 }
 
 // a user program that calls exec("/init")
@@ -473,11 +517,21 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
+
+        // TODO:STEP5
+        // scheduler
+        // Switch h/w page table register to the kernel's page table,
+        // and enable paging.
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma();
+
+        swtch(&c->context, &p->context); 
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0; // cpu dosen't run any process now
+        // 当前无进程适配时，将satp载入全局内核页表
+        kvminithart();
 
         found = 1;
       }
@@ -485,6 +539,12 @@ scheduler(void)
     }
 #if !defined (LAB_FS)
     if(found == 0) {
+      // TODO:STEP5
+      // scheduler
+      // 当前无进程适配时，将satp载入全局内核页表
+      // w_satp(MAKE_SATP(kernal_pagetable));
+      // sfence_vma();
+      // kvminithart();
       intr_on();
       asm volatile("wfi");
     }
@@ -519,6 +579,8 @@ sched(void)
   intena = mycpu()->intena;
   swtch(&p->context, &mycpu()->context);
   mycpu()->intena = intena;
+
+
 }
 
 // Give up the CPU for one scheduling round.
