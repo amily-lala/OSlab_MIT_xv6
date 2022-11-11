@@ -494,7 +494,7 @@ test_pagetable()
   return satp != gsatp;
 }
 
-// 页表打印功能
+// TODO:assignment 1 页表打印功能
 void 
 walkprint(pagetable_t pgtbl,int dep) 
 {

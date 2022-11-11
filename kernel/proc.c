@@ -44,6 +44,7 @@ procinit(void)
       // 独立内核
       p->kstack_pa = pa;
   }
+
   kvminithart();
 }
 
@@ -120,7 +121,9 @@ found:
   p->pagetable = proc_pagetable(p);
   
   // 为进程分配独立内核页表 An empty kernal page table.
+  // 映射用户页表，在kvminit_new()就可以完成，还是要在外面
   p->k_pagetable = kvminit_new();
+  // TODO: assignment3 映射用户页表
 
   if(p->pagetable == 0){
     freeproc(p);
@@ -151,6 +154,7 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// TODO: assignment 3
 static void
 freeproc(struct proc *p)
 {
@@ -175,6 +179,7 @@ freeproc(struct proc *p)
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
+// TODO: assignment3
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -208,6 +213,7 @@ proc_pagetable(struct proc *p)
 
 // Free a process's page table, and free the
 // physical memory it refers to.
+// TODO: assignment3
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
@@ -523,6 +529,7 @@ scheduler(void)
         // Switch h/w page table register to the kernel's page table,
         // and enable paging.
         w_satp(MAKE_SATP(p->k_pagetable));
+
         sfence_vma();
 
         swtch(&c->context, &p->context); 
@@ -553,6 +560,38 @@ scheduler(void)
 #endif
   }
 }
+
+// TODO: assignment3 将用户页表映射到独立内核页表
+// Create PTEs for virtual addresses starting at va that refer to
+// physical addresses starting at pa. va and size might not
+// be page-aligned. Returns 0 on success, -1 if walk() couldn't
+// allocate a needed page-table page.
+int 
+mappagesu2k(pagetable_t kpagetable, pagetable_t pagetable , int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  a = 0x00000000;
+  last = 0xc0000000; // 0xc0000000 max 有多少用多少
+  for(;;){
+    // 独立内核空间不足(起始)
+    if((pte = walk(kpagetable, a, 1)) == 0)
+      return -1;
+    // 
+    if(*pte & PTE_V)
+      panic("remap");
+
+    *pte = PA2PTE(pa) | perm | PTE_V;
+    // 映射结束条件，换成用户空间叶子页表映射完 && 同时没有超过上限0xc000 0000
+    if(a == last)
+      break;
+
+    a += PGSIZE;
+  }
+  return 0;
+}
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
